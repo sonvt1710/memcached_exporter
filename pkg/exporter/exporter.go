@@ -803,38 +803,7 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- e.lruCrawlerMovesToCold
 	ch <- e.lruCrawlerMovesToWarm
 	ch <- e.lruCrawlerMovesWithinLru
-	ch <- e.itemsLruHits
 	ch <- e.malloced
-	ch <- e.itemsNumber
-	ch <- e.itemsAge
-	ch <- e.itemsCrawlerReclaimed
-	ch <- e.itemsEvicted
-	ch <- e.itemsEvictedNonzero
-	ch <- e.itemsEvictedTime
-	ch <- e.itemsEvictedUnfetched
-	ch <- e.itemsExpiredUnfetched
-	ch <- e.itemsOutofmemory
-	ch <- e.itemsReclaimed
-	ch <- e.itemsTailrepairs
-	ch <- e.itemsExpiredUnfetched
-	ch <- e.itemsMovesToCold
-	ch <- e.itemsMovesToWarm
-	ch <- e.itemsMovesWithinLru
-	ch <- e.itemsHot
-	ch <- e.itemsWarm
-	ch <- e.itemsCold
-	ch <- e.itemsTemporary
-	ch <- e.itemsAgeOldestHot
-	ch <- e.itemsAgeOldestWarm
-	ch <- e.slabsChunkSize
-	ch <- e.slabsChunksPerPage
-	ch <- e.slabsCurrentPages
-	ch <- e.slabsCurrentChunks
-	ch <- e.slabsChunksUsed
-	ch <- e.slabsChunksFree
-	ch <- e.slabsChunksFreeEnd
-	ch <- e.slabsMemRequested
-	ch <- e.slabsCommands
 	ch <- e.extstoreCompactLost
 	ch <- e.extstoreCompactRescues
 	ch <- e.extstoreCompactSkipped
@@ -869,6 +838,40 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- e.proxyRequestFailedDepth
 	ch <- e.roundRobinFallback
 	ch <- e.unexpectedNapiIDs
+
+	// Only emit slab metric descriptors if their collection is enabled.
+	if e.enableSlab {
+		ch <- e.itemsLruHits
+		ch <- e.itemsNumber
+		ch <- e.itemsAge
+		ch <- e.itemsCrawlerReclaimed
+		ch <- e.itemsEvicted
+		ch <- e.itemsEvictedNonzero
+		ch <- e.itemsEvictedTime
+		ch <- e.itemsEvictedUnfetched
+		ch <- e.itemsExpiredUnfetched
+		ch <- e.itemsOutofmemory
+		ch <- e.itemsReclaimed
+		ch <- e.itemsTailrepairs
+		ch <- e.itemsMovesToCold
+		ch <- e.itemsMovesToWarm
+		ch <- e.itemsMovesWithinLru
+		ch <- e.itemsHot
+		ch <- e.itemsWarm
+		ch <- e.itemsCold
+		ch <- e.itemsTemporary
+		ch <- e.itemsAgeOldestHot
+		ch <- e.itemsAgeOldestWarm
+		ch <- e.slabsChunkSize
+		ch <- e.slabsChunksPerPage
+		ch <- e.slabsCurrentPages
+		ch <- e.slabsCurrentChunks
+		ch <- e.slabsChunksUsed
+		ch <- e.slabsChunksFree
+		ch <- e.slabsChunksFreeEnd
+		ch <- e.slabsMemRequested
+		ch <- e.slabsCommands
+	}
 }
 
 // Collect fetches the statistics from the configured memcached server, and
