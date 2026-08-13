@@ -1057,33 +1057,35 @@ func (e *Exporter) parseStats(ch chan<- prometheus.Metric, stats map[net.Addr]me
 			parseError = err
 		}
 
-		for slab, u := range t.Items {
-			slab := strconv.Itoa(slab)
-			err := firstError(
-				e.parseAndNewMetric(ch, e.itemsNumber, prometheus.GaugeValue, u, "number", slab),
-				e.parseAndNewMetric(ch, e.itemsAge, prometheus.GaugeValue, u, "age", slab),
-				e.parseAndNewMetric(ch, e.itemsLruHits, prometheus.CounterValue, u, "hits_to_hot", slab, "hot"),
-				e.parseAndNewMetric(ch, e.itemsLruHits, prometheus.CounterValue, u, "hits_to_warm", slab, "warm"),
-				e.parseAndNewMetric(ch, e.itemsLruHits, prometheus.CounterValue, u, "hits_to_cold", slab, "cold"),
-				e.parseAndNewMetric(ch, e.itemsLruHits, prometheus.CounterValue, u, "hits_to_temp", slab, "temporary"),
-			)
-			if err != nil {
-				parseError = err
-			}
-			for m, d := range itemsCounterMetrics {
-				if _, ok := u[m]; !ok {
-					continue
-				}
-				if err := e.parseAndNewMetric(ch, d, prometheus.CounterValue, u, m, slab); err != nil {
+		if e.enableSlab {
+			for slab, u := range t.Items {
+				slab := strconv.Itoa(slab)
+				err := firstError(
+					e.parseAndNewMetric(ch, e.itemsNumber, prometheus.GaugeValue, u, "number", slab),
+					e.parseAndNewMetric(ch, e.itemsAge, prometheus.GaugeValue, u, "age", slab),
+					e.parseAndNewMetric(ch, e.itemsLruHits, prometheus.CounterValue, u, "hits_to_hot", slab, "hot"),
+					e.parseAndNewMetric(ch, e.itemsLruHits, prometheus.CounterValue, u, "hits_to_warm", slab, "warm"),
+					e.parseAndNewMetric(ch, e.itemsLruHits, prometheus.CounterValue, u, "hits_to_cold", slab, "cold"),
+					e.parseAndNewMetric(ch, e.itemsLruHits, prometheus.CounterValue, u, "hits_to_temp", slab, "temporary"),
+				)
+				if err != nil {
 					parseError = err
 				}
-			}
-			for m, d := range itemsGaugeMetrics {
-				if _, ok := u[m]; !ok {
-					continue
+				for m, d := range itemsCounterMetrics {
+					if _, ok := u[m]; !ok {
+						continue
+					}
+					if err := e.parseAndNewMetric(ch, d, prometheus.CounterValue, u, m, slab); err != nil {
+						parseError = err
+					}
 				}
-				if err := e.parseAndNewMetric(ch, d, prometheus.GaugeValue, u, m, slab); err != nil {
-					parseError = err
+				for m, d := range itemsGaugeMetrics {
+					if _, ok := u[m]; !ok {
+						continue
+					}
+					if err := e.parseAndNewMetric(ch, d, prometheus.GaugeValue, u, m, slab); err != nil {
+						parseError = err
+					}
 				}
 			}
 		}
