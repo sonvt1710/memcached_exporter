@@ -36,10 +36,11 @@ var errKeyNotFound = errors.New("key not found")
 
 // Exporter collects metrics from a memcached server.
 type Exporter struct {
-	address   string
-	timeout   time.Duration
-	logger    *slog.Logger
-	tlsConfig *tls.Config
+	address    string
+	timeout    time.Duration
+	logger     *slog.Logger
+	tlsConfig  *tls.Config
+	enableSlab bool
 
 	up                       *prometheus.Desc
 	uptime                   *prometheus.Desc
@@ -147,12 +148,13 @@ type Exporter struct {
 }
 
 // New returns an initialized exporter.
-func New(server string, timeout time.Duration, logger *slog.Logger, tlsConfig *tls.Config) *Exporter {
+func New(server string, timeout time.Duration, logger *slog.Logger, tlsConfig *tls.Config, enableSlab bool) *Exporter {
 	return &Exporter{
-		address:   server,
-		timeout:   timeout,
-		logger:    logger,
-		tlsConfig: tlsConfig,
+		address:    server,
+		timeout:    timeout,
+		logger:     logger,
+		tlsConfig:  tlsConfig,
+		enableSlab: enableSlab,
 		up: prometheus.NewDesc(
 			prometheus.BuildFQName(Namespace, "", "up"),
 			"Could the memcached server be reached.",
@@ -801,38 +803,7 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- e.lruCrawlerMovesToCold
 	ch <- e.lruCrawlerMovesToWarm
 	ch <- e.lruCrawlerMovesWithinLru
-	ch <- e.itemsLruHits
 	ch <- e.malloced
-	ch <- e.itemsNumber
-	ch <- e.itemsAge
-	ch <- e.itemsCrawlerReclaimed
-	ch <- e.itemsEvicted
-	ch <- e.itemsEvictedNonzero
-	ch <- e.itemsEvictedTime
-	ch <- e.itemsEvictedUnfetched
-	ch <- e.itemsExpiredUnfetched
-	ch <- e.itemsOutofmemory
-	ch <- e.itemsReclaimed
-	ch <- e.itemsTailrepairs
-	ch <- e.itemsExpiredUnfetched
-	ch <- e.itemsMovesToCold
-	ch <- e.itemsMovesToWarm
-	ch <- e.itemsMovesWithinLru
-	ch <- e.itemsHot
-	ch <- e.itemsWarm
-	ch <- e.itemsCold
-	ch <- e.itemsTemporary
-	ch <- e.itemsAgeOldestHot
-	ch <- e.itemsAgeOldestWarm
-	ch <- e.slabsChunkSize
-	ch <- e.slabsChunksPerPage
-	ch <- e.slabsCurrentPages
-	ch <- e.slabsCurrentChunks
-	ch <- e.slabsChunksUsed
-	ch <- e.slabsChunksFree
-	ch <- e.slabsChunksFreeEnd
-	ch <- e.slabsMemRequested
-	ch <- e.slabsCommands
 	ch <- e.extstoreCompactLost
 	ch <- e.extstoreCompactRescues
 	ch <- e.extstoreCompactSkipped
@@ -867,6 +838,40 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- e.proxyRequestFailedDepth
 	ch <- e.roundRobinFallback
 	ch <- e.unexpectedNapiIDs
+
+	// Only emit slab metric descriptors if their collection is enabled.
+	if e.enableSlab {
+		ch <- e.itemsLruHits
+		ch <- e.itemsNumber
+		ch <- e.itemsAge
+		ch <- e.itemsCrawlerReclaimed
+		ch <- e.itemsEvicted
+		ch <- e.itemsEvictedNonzero
+		ch <- e.itemsEvictedTime
+		ch <- e.itemsEvictedUnfetched
+		ch <- e.itemsExpiredUnfetched
+		ch <- e.itemsOutofmemory
+		ch <- e.itemsReclaimed
+		ch <- e.itemsTailrepairs
+		ch <- e.itemsMovesToCold
+		ch <- e.itemsMovesToWarm
+		ch <- e.itemsMovesWithinLru
+		ch <- e.itemsHot
+		ch <- e.itemsWarm
+		ch <- e.itemsCold
+		ch <- e.itemsTemporary
+		ch <- e.itemsAgeOldestHot
+		ch <- e.itemsAgeOldestWarm
+		ch <- e.slabsChunkSize
+		ch <- e.slabsChunksPerPage
+		ch <- e.slabsCurrentPages
+		ch <- e.slabsCurrentChunks
+		ch <- e.slabsChunksUsed
+		ch <- e.slabsChunksFree
+		ch <- e.slabsChunksFreeEnd
+		ch <- e.slabsMemRequested
+		ch <- e.slabsCommands
+	}
 }
 
 // Collect fetches the statistics from the configured memcached server, and
@@ -1055,78 +1060,93 @@ func (e *Exporter) parseStats(ch chan<- prometheus.Metric, stats map[net.Addr]me
 			parseError = err
 		}
 
-		for slab, u := range t.Items {
-			slab := strconv.Itoa(slab)
-			err := firstError(
-				e.parseAndNewMetric(ch, e.itemsNumber, prometheus.GaugeValue, u, "number", slab),
-				e.parseAndNewMetric(ch, e.itemsAge, prometheus.GaugeValue, u, "age", slab),
-				e.parseAndNewMetric(ch, e.itemsLruHits, prometheus.CounterValue, u, "hits_to_hot", slab, "hot"),
-				e.parseAndNewMetric(ch, e.itemsLruHits, prometheus.CounterValue, u, "hits_to_warm", slab, "warm"),
-				e.parseAndNewMetric(ch, e.itemsLruHits, prometheus.CounterValue, u, "hits_to_cold", slab, "cold"),
-				e.parseAndNewMetric(ch, e.itemsLruHits, prometheus.CounterValue, u, "hits_to_temp", slab, "temporary"),
-			)
-			if err != nil {
-				parseError = err
-			}
-			for m, d := range itemsCounterMetrics {
-				if _, ok := u[m]; !ok {
-					continue
-				}
-				if err := e.parseAndNewMetric(ch, d, prometheus.CounterValue, u, m, slab); err != nil {
+		if e.enableSlab {
+			for slab, u := range t.Items {
+				slab := strconv.Itoa(slab)
+				err := firstError(
+					e.parseAndNewMetric(ch, e.itemsNumber, prometheus.GaugeValue, u, "number", slab),
+					e.parseAndNewMetric(ch, e.itemsAge, prometheus.GaugeValue, u, "age", slab),
+					e.parseAndNewMetric(ch, e.itemsLruHits, prometheus.CounterValue, u, "hits_to_hot", slab, "hot"),
+					e.parseAndNewMetric(ch, e.itemsLruHits, prometheus.CounterValue, u, "hits_to_warm", slab, "warm"),
+					e.parseAndNewMetric(ch, e.itemsLruHits, prometheus.CounterValue, u, "hits_to_cold", slab, "cold"),
+					e.parseAndNewMetric(ch, e.itemsLruHits, prometheus.CounterValue, u, "hits_to_temp", slab, "temporary"),
+				)
+				if err != nil {
 					parseError = err
 				}
-			}
-			for m, d := range itemsGaugeMetrics {
-				if _, ok := u[m]; !ok {
-					continue
+				for m, d := range itemsCounterMetrics {
+					if _, ok := u[m]; !ok {
+						continue
+					}
+					if err := e.parseAndNewMetric(ch, d, prometheus.CounterValue, u, m, slab); err != nil {
+						parseError = err
+					}
 				}
-				if err := e.parseAndNewMetric(ch, d, prometheus.GaugeValue, u, m, slab); err != nil {
-					parseError = err
+				for m, d := range itemsGaugeMetrics {
+					if _, ok := u[m]; !ok {
+						continue
+					}
+					if err := e.parseAndNewMetric(ch, d, prometheus.GaugeValue, u, m, slab); err != nil {
+						parseError = err
+					}
 				}
 			}
 		}
 
-		for slab, v := range t.Slabs {
-			slab := strconv.Itoa(slab)
-
-			for _, op := range []string{"get", "delete", "incr", "decr", "cas", "touch"} {
-				if err := e.parseAndNewMetric(ch, e.slabsCommands, prometheus.CounterValue, v, op+"_hits", slab, op, "hit"); err != nil {
-					parseError = err
-				}
-			}
-			if err := e.parseAndNewMetric(ch, e.slabsCommands, prometheus.CounterValue, v, "cas_badval", slab, "cas", "badval"); err != nil {
-				parseError = err
-			}
-
-			slabSetCmd, err := parse(v, "cmd_set", e.logger)
-			if err == nil {
-				if slabCas, slabCasErr := sum(v, "cas_hits", "cas_badval"); slabCasErr == nil {
-					ch <- prometheus.MustNewConstMetric(e.slabsCommands, prometheus.CounterValue, slabSetCmd-slabCas, slab, "set", "hit")
-				} else {
-					e.logger.Error("Failed to parse cas", "err", slabCasErr)
-					parseError = slabCasErr
-				}
-			} else {
-				e.logger.Error("Failed to parse set", "err", err)
-				parseError = err
-			}
-
-			err = firstError(
-				e.parseAndNewMetric(ch, e.slabsChunkSize, prometheus.GaugeValue, v, "chunk_size", slab),
-				e.parseAndNewMetric(ch, e.slabsChunksPerPage, prometheus.GaugeValue, v, "chunks_per_page", slab),
-				e.parseAndNewMetric(ch, e.slabsCurrentPages, prometheus.GaugeValue, v, "total_pages", slab),
-				e.parseAndNewMetric(ch, e.slabsCurrentChunks, prometheus.GaugeValue, v, "total_chunks", slab),
-				e.parseAndNewMetric(ch, e.slabsChunksUsed, prometheus.GaugeValue, v, "used_chunks", slab),
-				e.parseAndNewMetric(ch, e.slabsChunksFree, prometheus.GaugeValue, v, "free_chunks", slab),
-				e.parseAndNewMetric(ch, e.slabsChunksFreeEnd, prometheus.GaugeValue, v, "free_chunks_end", slab),
-				e.parseAndNewMetric(ch, e.slabsMemRequested, prometheus.GaugeValue, v, "mem_requested", slab),
-			)
-			if err != nil {
+		if e.enableSlab {
+			if err := e.collectSlabMetrics(ch, t.Slabs); err != nil {
 				parseError = err
 			}
 		}
 	}
 
+	return parseError
+}
+
+// collectSlabMetrics emits the per-slab-class metrics for a single memcached
+// instance. These are high cardinality, so they are only collected when the
+// slab collector is enabled.
+func (e *Exporter) collectSlabMetrics(ch chan<- prometheus.Metric, slabs map[int]map[string]string) error {
+	var parseError error
+	for slab, v := range slabs {
+		slab := strconv.Itoa(slab)
+
+		for _, op := range []string{"get", "delete", "incr", "decr", "cas", "touch"} {
+			if err := e.parseAndNewMetric(ch, e.slabsCommands, prometheus.CounterValue, v, op+"_hits", slab, op, "hit"); err != nil {
+				parseError = err
+			}
+		}
+		if err := e.parseAndNewMetric(ch, e.slabsCommands, prometheus.CounterValue, v, "cas_badval", slab, "cas", "badval"); err != nil {
+			parseError = err
+		}
+
+		slabSetCmd, err := parse(v, "cmd_set", e.logger)
+		if err == nil {
+			if slabCas, slabCasErr := sum(v, "cas_hits", "cas_badval"); slabCasErr == nil {
+				ch <- prometheus.MustNewConstMetric(e.slabsCommands, prometheus.CounterValue, slabSetCmd-slabCas, slab, "set", "hit")
+			} else {
+				e.logger.Error("Failed to parse cas", "err", slabCasErr)
+				parseError = slabCasErr
+			}
+		} else {
+			e.logger.Error("Failed to parse set", "err", err)
+			parseError = err
+		}
+
+		err = firstError(
+			e.parseAndNewMetric(ch, e.slabsChunkSize, prometheus.GaugeValue, v, "chunk_size", slab),
+			e.parseAndNewMetric(ch, e.slabsChunksPerPage, prometheus.GaugeValue, v, "chunks_per_page", slab),
+			e.parseAndNewMetric(ch, e.slabsCurrentPages, prometheus.GaugeValue, v, "total_pages", slab),
+			e.parseAndNewMetric(ch, e.slabsCurrentChunks, prometheus.GaugeValue, v, "total_chunks", slab),
+			e.parseAndNewMetric(ch, e.slabsChunksUsed, prometheus.GaugeValue, v, "used_chunks", slab),
+			e.parseAndNewMetric(ch, e.slabsChunksFree, prometheus.GaugeValue, v, "free_chunks", slab),
+			e.parseAndNewMetric(ch, e.slabsChunksFreeEnd, prometheus.GaugeValue, v, "free_chunks_end", slab),
+			e.parseAndNewMetric(ch, e.slabsMemRequested, prometheus.GaugeValue, v, "mem_requested", slab),
+		)
+		if err != nil {
+			parseError = err
+		}
+	}
 	return parseError
 }
 
