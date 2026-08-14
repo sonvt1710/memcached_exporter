@@ -1,6 +1,11 @@
 ## Unreleased
 
+## 0.17.0 / 2026-08-14
+
+* [FEATURE] Add distroless image variant #308
 * [FEATURE] Add `--collector.slab` flag to toggle high-cardinality `memcached_slab_*` metrics #178
+* [CHANGE] Publish releases to GHCR #309
+* [CHANGE] Update dependencies
 
 ## 0.16.0 / 2026-04-08
 
